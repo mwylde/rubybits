@@ -36,7 +36,7 @@ module RubyBits
 		# Returns a binary string representation of the structure according to the fields defined
 		# and their current values.
 		# @return [String] bit string representing struct
-		def to_s
+		def to_s_old
 			offset = 0
 			buffer = []
 			# This method works by iterating through each bit of each field and setting the bits in
@@ -64,6 +64,30 @@ module RubyBits
 			
 			buffer.pack("c*")
 		end
+		
+		def to_s
+			offset = 0
+			buffer = []
+			# This method works by iterating through each bit of each field and setting the bits in
+			# the current output byte appropriately.
+			self.class.fields.collect{|field|
+				kind, name, size, description, options = field
+				data = self.send(name)
+				data ||= 0
+				size.times do |bit|
+					buffer << 0 if offset % 8 == 0
+					lm_of_8 = (size/8)*8
+					buffer[-1] |= get_bit(data, size-bit-1) << 7-(offset % 8)
+					offset += 1
+				end
+			}
+			#puts
+			#puts buffer.collect{|x| "%08b" % x}.inspect
+			#puts [0b11010001, 0b10101010, 0b11111010, 0b10001110].collect{|x| "%08b" % x}.inspect
+			
+			buffer.pack("c*")
+		end
+		
 		
 		private
 		PACK_MAP = {
