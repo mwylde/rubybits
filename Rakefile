@@ -15,7 +15,7 @@ Jeweler::Tasks.new do |gem|
 	gem.name = "rubybits"
 	gem.homepage = "http://github.com/mwylde/rubybits"
 	gem.license = "MIT"
-	gem.summary = %Q{A library that makes dealing with bit strings and binary formats easier, inspired by Erlang}
+	gem.summary = %Q{A library that makes dealing with bit strings and binary formats easier, inspired by BitStruct}
 	gem.description = %Q{TODO: longer description of your gem}
 	gem.email = "mwylde@wesleyan.edu"
 	gem.authors = ["Micah Wylde"]
