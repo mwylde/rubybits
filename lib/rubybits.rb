@@ -42,6 +42,12 @@ module RubyBits
 			# 	set to 0
 			def checksum field, &block
 				@_checksum_field = [field, block]
+				self.class_eval %{
+					def #{field}
+						calculate_checksum unless @_calculating_checksum || @_checksum_cached
+						@__#{field}
+					end
+				}
 			end
 			
 			# A list of the fields in the class
@@ -59,10 +65,14 @@ module RubyBits
 						@__#{name} = val
 						@_checksum_cached = false
 					end
-					def #{name}
-						@__#{name}
-					end
 				}
+				unless checksum_field && checksum_field[0] == name
+					self.class_eval %{
+						def #{name}
+							@__#{name}
+						end
+					}
+				end
 			end
 		end
 		
@@ -90,10 +100,12 @@ module RubyBits
 		# Calculates and sets the checksum bit according to the checksum field defined by #checksum
 		def calculate_checksum
 			if self.class.checksum_field
+				@_calculating_checksum = true
 				self.send("#{self.class.checksum_field[0]}=", 0)
 				checksum = self.class.checksum_field[1].call(self.to_s_without_checksum.bytes.to_a)
 				self.send("#{self.class.checksum_field[0]}=", checksum)
 				@_checksum_cached = true
+				@_calculating_checksum = false
 			end
 		end
 		

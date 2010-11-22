@@ -91,5 +91,23 @@ describe "Structure" do
 		tf = TestFormat7.new(:field1 => 0x77, :field2 => 0x06, :field3 => 0x0F, :field4 => 0x726b)
 		tf.to_s.bytes.to_a.should == "work".bytes.to_a << ((0x77 + 0x6F + 0x72 + 0x6B) & 255)
 	end
+	
+	it "should calculate checksum when accessed" do
+		class TestFormat8 < RubyBits::Structure
+			unsigned :field1,  8,  "Field1"
+			unsigned :field2,  4,  "Field2"
+			unsigned :field3,  4,  "Flag"
+			unsigned :field4,  16, "Field3"
+			unsigned :checksum, 8, "Checksum (sum of all previous fields)"
+			
+			checksum :checksum do |bytes|
+				bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+			end
+		end
+		
+		tf = TestFormat8.new(:field1 => 0x77, :field2 => 0x06, :field3 => 0x0F, :field4 => 0x726b)
+		tf.checksum.should == (0x77 + 0x6F + 0x72 + 0x6B) & 255
+	end
+	
 end
 
