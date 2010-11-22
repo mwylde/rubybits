@@ -80,37 +80,18 @@ module RubyBits
 		# Returns a binary string representation of the structure according to the fields defined
 		# and their current values.
 		# @return [String] bit string representing struct
-		def to_s(do_checksum = true)
-			if self.class.checksum_field && do_checksum && !@_checksum_cached
+		def to_s
+			if self.class.checksum_field && !@_checksum_cached
 				self.calculate_checksum
 			end
-			offset = 0
-			buffer = []
-			# This method works by iterating through each bit of each field and setting the bits in
-			# the current output byte appropriately.
-			self.class.fields.collect{|field|
-				kind, name, size, description, options = field
-				data = self.send(name)
-				data ||= 0
-				size.times do |bit|
-					buffer << 0 if offset % 8 == 0
-					lm_of_8 = (size/8)*8
-					buffer[-1] |= get_bit(data, size-bit-1) << 7-(offset % 8)
-					offset += 1
-				end
-			}
-			#puts
-			#puts buffer.collect{|x| "%08b" % x}.inspect
-			#puts [0b11010001, 0b10101010, 0b11111010, 0b10001110].collect{|x| "%08b" % x}.inspect
-			
-			buffer.pack("c*")	
+			to_s_without_checksum
 		end
 		
 		# Calculates and sets the checksum bit according to the checksum field defined by #checksum
 		def calculate_checksum
 			if self.class.checksum_field
 				self.send("#{self.class.checksum_field[0]}=", 0)
-				checksum = self.class.checksum_field[1].call(self.to_s(false).bytes.to_a)
+				checksum = self.class.checksum_field[1].call(self.to_s_without_checksum.bytes.to_a)
 				self.send("#{self.class.checksum_field[0]}=", checksum)
 				@_checksum_cached = true
 			end
@@ -133,6 +114,29 @@ module RubyBits
 		# @return [Fixnum: {0, 1}] 0 or 1, depending on the value of the bit at position bit of number
 		def get_bit(number, bit)
 			number & (1<<bit) > 0 ? 1 : 0
+		end
+		
+		def to_s_without_checksum
+			offset = 0
+			buffer = []
+			# This method works by iterating through each bit of each field and setting the bits in
+			# the current output byte appropriately.
+			self.class.fields.collect{|field|
+				kind, name, size, description, options = field
+				data = self.send(name)
+				data ||= 0
+				size.times do |bit|
+					buffer << 0 if offset % 8 == 0
+					lm_of_8 = (size/8)*8
+					buffer[-1] |= get_bit(data, size-bit-1) << 7-(offset % 8)
+					offset += 1
+				end
+			}
+			#puts
+			#puts buffer.collect{|x| "%08b" % x}.inspect
+			#puts [0b11010001, 0b10101010, 0b11111010, 0b10001110].collect{|x| "%08b" % x}.inspect
+			
+			buffer.pack("c*")	
 		end
 	end
 	
