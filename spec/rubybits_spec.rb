@@ -109,5 +109,47 @@ describe "Structure" do
 		tf.checksum.should == (0x77 + 0x6F + 0x72 + 0x6B) & 255
 	end
 	
+	it "should allow variable length fields" do
+		class TestFormat9 < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :field2,   4, "Field2"
+			unsigned :field3,   4, "Flag"
+			variable :field4,      "text"
+			unsigned :checksum, 8, "Checksum (sum of all previous fields)"
+			
+			checksum :checksum do |bytes|
+				bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+			end
+		end
+		
+		tf = TestFormat9.new(:field1 => 0x77, :field2 => 0x06, :field3 => 0x0F, :field4 => "hello")
+		checksum = (0x77 + 0x6F + "hello".bytes.to_a.reduce(:+)) & 255
+		tf.checksum.should == checksum
+		
+		tf.to_s.bytes.to_a.should == [0x77, 0x6F] + "hello".bytes.to_a << checksum
+	end
+	
+	it "should allow variable length fields that are not byte aligned" do
+		class TestFormat10 < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :field2,   4, "Field2"
+			unsigned :field3,   4, "Flag"
+			unsigned :field4,   6, "Not byte aligned"
+			variable :text,        "text"
+			unsigned :checksum, 8, "Checksum (sum of all previous fields)"
+			
+			checksum :checksum do |bytes|
+				bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+			end
+		end
+		
+		string = [119, 111, 201, 133, 137, 140]
+		tf = TestFormat10.new(:field1 => 0x77, :field2 => 0x06, :field3 => 0x0F, :field4 => 0x32, :text => "abc")
+		checksum = string.reduce(:+) & 255
+		tf.checksum.should == checksum
+		
+		tf.to_s.bytes.to_a.should == [119, 111, 201, 133, 137, 141, 36]
+	end
+	
 end
 

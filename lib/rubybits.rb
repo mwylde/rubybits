@@ -26,11 +26,15 @@ module RubyBits
 	#   # => [0x44, 0x2, 0x05, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x5F]
 	class Structure < Object
 		class << self
-			[:unsigned, :signed, :text, :variable].each{|kind|
+			[:unsigned, :signed, :text].each{|kind|
 				define_method kind do |name, size, description, *options|
 					field(kind, name, size, description, options)
 				end
 			}
+			
+			define_method :variable do |name, description, *options|
+				field(:variable, name, nil, description, options)
+			end
 			
 			# Sets the checksum field. Setting a checksum field alters the functionality
 			# in several ways: the checksum is automatically calculated and set, and #parse
@@ -133,21 +137,37 @@ module RubyBits
 			buffer = []
 			# This method works by iterating through each bit of each field and setting the bits in
 			# the current output byte appropriately.
-			self.class.fields.collect{|field|
+			self.class.fields.each{|field|
 				kind, name, size, description, options = field
 				data = self.send(name)
-				data ||= 0
-				size.times do |bit|
-					buffer << 0 if offset % 8 == 0
-					lm_of_8 = (size/8)*8
-					buffer[-1] |= get_bit(data, size-bit-1) << 7-(offset % 8)
-					offset += 1
+				case kind
+				when :variable
+					data ||= ""
+					if offset % 8 == 0
+						buffer += data.bytes.to_a
+					else
+						data.each_byte{|byte|
+							8.times{|bit|
+								buffer << 0 if offset % 8 == 0
+								buffer[-1] |= get_bit(byte, 7-bit) << 7-(offset % 8)
+								offset += 1
+							}
+						}
+					end
+					
+				else
+					data ||= 0
+					size.times do |bit|
+						buffer << 0 if offset % 8 == 0
+						buffer[-1] |= get_bit(data, size-bit-1) << 7-(offset % 8)
+						offset += 1
+					end
 				end
 			}
-			#puts
-			#puts buffer.collect{|x| "%08b" % x}.inspect
-			#puts [0b11010001, 0b10101010, 0b11111010, 0b10001110].collect{|x| "%08b" % x}.inspect
-			
+			#if self.class.to_s == "TestFormat10"
+			#	puts buffer.collect{|x| "%08b" % x}.inspect
+			#	puts [119, 111, 201, 133, 137, 142, 72].collect{|x| "%08b" % x}.inspect
+			#end
 			buffer.pack("c*")	
 		end
 	end
