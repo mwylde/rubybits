@@ -71,8 +71,8 @@ describe "Structure" do
 			signed :field3, 4, "Field3"
 		end
 		
-		tf = TestFormat6.new(:field1 => -10, :field2 => -4, :field3 => -8)
-		tf.to_s.bytes.to_a.should == [0b11110110, 0b11001000]
+		tf = TestFormat6.new(:field1 => -10, :field2 => -4, :field3 => -7)
+		tf.to_s.bytes.to_a.should == [0b11110110, 0b11001001]
 	end
 	
 	it "should calculate checksum correctly" do
@@ -151,5 +151,39 @@ describe "Structure" do
 		tf.to_s.bytes.to_a.should == [119, 111, 201, 133, 137, 141, 36]
 	end
 	
+	it "should allow variable length fields whose lengths are specified by another field" do
+		class TestFormat11 < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :field2,   4, "Field2"
+			unsigned :field3,   4, "Flag"
+			variable :text,        "text", :length => :field2
+			unsigned :checksum, 8, "Checksum (sum of all previous fields)"
+			
+			checksum :checksum do |bytes|
+				bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+			end
+		end
+		
+		tf = TestFormat11.new(:field1 => 0x77, :field2 => 0x04, :field3 => 0x0F, :text => "abc")
+		checksum = (0x77 + 0x4F + "abc".bytes.to_a.reduce(:+)) & 255
+		tf.checksum.should == checksum
+		
+		tf.to_s.bytes.to_a.should == [0x77, 0x4F, 0x61, 0x62, 0x63, 0, checksum]
+	end
+	
+	it "should fail when setting an invalid value for a field" do
+		class TestFormat12 < RubyBits::Structure
+			unsigned :field1,   8,  "Field1"
+			unsigned :field2,   4,  "Field2"
+			unsigned :field3,   16, "Flag"
+			variable :text,         "text"
+		end
+		
+		expect {TestFormat12.new(:field1 => 257, :field2 => 0x4, :field3 => 500)}.to raise_error(RubyBits::FieldValueException)
+		tf = TestFormat12.new
+		expect {tf.field2 = 0x44}.to raise_error(RubyBits::FieldValueException)
+		expect {tf.field3 = 0x44122}.to raise_error(RubyBits::FieldValueException)
+		expect {tf.text = 55}.to raise_error(RubyBits::FieldValueException)
+	end
 end
 

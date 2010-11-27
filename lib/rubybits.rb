@@ -1,5 +1,9 @@
 # Provides various utilities for working with binary formats.
 module RubyBits
+	# Raised when you set a field to a value that is invalid for the type of
+	# the field (i.e., too large or the wrong type)
+	class FieldValueException < Exception; end
+		
 	# You can subclass RubyBits::Strcuture to define new binary formats. This
 	# can be used for lots of purposes: reading binary data, communicating in
 	# binary formats (like TCP/IP, http, etc).
@@ -26,14 +30,25 @@ module RubyBits
 	#   # => [0x44, 0x2, 0x05, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x5F]
 	class Structure < Object
 		class << self
-			[:unsigned, :signed, :text].each{|kind|
+			FIELDS = {
+				:unsigned => proc{|val, size, options|
+					val.is_a?(Fixnum) && val < 2**size
+				},
+				:signed => proc{|val, size, options|
+					val.is_a?(Fixnum) && val.abs < 2**(size-1)
+				},
+				:variable => proc{|val, size, options|
+					val.is_a? String
+				}
+			}
+			FIELDS.each{|kind, validator|
 				define_method kind do |name, size, description, *options|
-					field(kind, name, size, description, options)
+					field(kind, name, size, description, validator, options[0])
 				end
 			}
 			
 			define_method :variable do |name, description, *options|
-				field(:variable, name, nil, description, options)
+				field(:variable, name, nil, description, FIELDS[:variable], options[0])
 			end
 			
 			# Sets the checksum field. Setting a checksum field alters the functionality
@@ -61,15 +76,16 @@ module RubyBits
 			def checksum_field; @_checksum_field; end
 
 			private
-			def field kind, name, size, description, options
+			def field kind, name, size, description, validator, options
 				@_fields ||= []
 				@_fields << [kind, name, size, description, options]
-				self.class_eval %{
-					def #{name}= val
-						@__#{name} = val
+				self.class_eval do
+					define_method "#{name}=" do |val|
+						raise FieldValueException unless validator.call(val, size, options)
+						self.instance_variable_set("@__#{name}", val)
 						@_checksum_cached = false
 					end
-				}
+				end
 				unless checksum_field && checksum_field[0] == name
 					self.class_eval %{
 						def #{name}
@@ -140,13 +156,18 @@ module RubyBits
 			self.class.fields.each{|field|
 				kind, name, size, description, options = field
 				data = self.send(name)
+				options ||= {}
 				case kind
 				when :variable
 					data ||= ""
+					size = options[:length] && self.send(options[:length]) ? self.send(options[:length]) : data.size
+					#size *= options[:multiple] if options[:multiple]
+					byte_iter = data.bytes
 					if offset % 8 == 0
-						buffer += data.bytes.to_a
+						buffer += data.bytes.to_a + [0] * (size - data.size)
 					else
-						data.each_byte{|byte|
+						size.times{|i|
+							byte = byte_iter.next rescue 0
 							8.times{|bit|
 								buffer << 0 if offset % 8 == 0
 								buffer[-1] |= get_bit(byte, 7-bit) << 7-(offset % 8)
@@ -154,7 +175,6 @@ module RubyBits
 							}
 						}
 					end
-					
 				else
 					data ||= 0
 					size.times do |bit|
