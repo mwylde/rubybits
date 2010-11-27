@@ -194,20 +194,22 @@ describe "parsing" do
 			unsigned :field2,   4,  "Field2"
 			unsigned :field3,   4,  "Field3"
 			signed   :field4,   8,  "Field4"
-			unsigned :field5,  16,  "Short field"
+			signed   :field5,   8,  "Field5"
+			unsigned :field6,  16,  "Short field"
 		end
-		TestFormat13.valid_message?([0x34, 0x41, 0b11001001, 0x44, 0x55].pack("c*")).should == true
-		TestFormat13.valid_message?([0x34, 0x41, 0b11001001, 0x44, 0x55, 0x44].pack("c*")).should == true
-		TestFormat13.valid_message?([0x11, 0x11, 0x44, 0x11, 0x44].pack("c*")).should == false
+		TestFormat13.valid_message?([0x34, 0x41, 0b11001001, 0x24, 0x44, 0x55].pack("c*")).should == true
+		TestFormat13.valid_message?([0x34, 0x41, 0b11001001, 0x24, 0x44, 0x55, 0x44].pack("c*")).should == true
+		TestFormat13.valid_message?([0x11, 0x11, 0x44, 0x24, 0x11].pack("c*")).should == false
 		TestFormat13.valid_message?("").should == false
 		
-		tf, string = TestFormat13.from_string([0x34, 0x41, 0b11001001, 0x55, 0x11].pack("c*") + "ab")
+		tf, string = TestFormat13.from_string([0x34, 0x41, 0b11001001, 0b00110011, 0x55, 0x11].pack("c*") + "ab")
 
 		tf.field1.should == 0x34
 		tf.field2.should == 0x04
 		tf.field3.should == 0x01
 		tf.field4.should == -55
-		tf.field5.should == 0x5511
+		tf.field5.should == 0b00110011
+		tf.field6.should == 0x5511
 		string.should == "ab"
 	end
 	it "should correctly determine a valid message with variable length fields" do
@@ -251,18 +253,25 @@ describe "parsing" do
 		tf.checksum.should == 254
 		string.should == "BC"
 	end
-#	it "should parse fix-width format" do 
-#		class TestFormat15 < RubyBits::Structure
-#			unsigned :field1,   8,  "Field1"
-#			unsigned :field2,   4,  "Field2"
-#			unsigned :field3,   4,  "Field3"
-#			signed   :field4,   8,  "Field4"
-#		end
-#
-#		tf = TestFormat15.parse([0x34, 0x41, 0b11001001].pack("c*"))
-#		tf.field1.should == 0x34
-#		tf.field2.should == 0x04
-#		tf.field3.should == 0x01
-#		tf.field4.should == -55
-#	end
+	it "should parse fix-width format" do 
+		class TestFormat16 < RubyBits::Structure
+			unsigned :field1,   8,  "Field1"
+			unsigned :field2,   4,  "Field2"
+			unsigned :field3,   4,  "Field3"
+			signed   :field4,   8,  "Field4"
+		end
+
+		messages, string = TestFormat16.parse([0x34, 0x41, 0b11001001, 0x55, 0xCF, 0b00110110].pack("c*") + "ab")
+		messages[0].field1.should == 0x34
+		messages[0].field2.should == 0x04
+		messages[0].field3.should == 0x01
+		messages[0].field4.should == -55
+		
+		messages[1].field1.should == 0x55
+		messages[1].field2.should == 0xC
+		messages[1].field3.should == 0xF
+		messages[1].field4.should == 0b00110110
+		
+		string.should == "ab"
+	end
 end

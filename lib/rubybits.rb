@@ -59,15 +59,17 @@ module RubyBits
 						# advance the iterator by the number of whole bytes in the offset (offset div 8)
 						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
 						# is this a positive number? yes if the most significant bit is 0
+						byte = s_iter.next if offset % 8 == 0
 						pos = byte & (1 << offset%8) == 0
 						
 						length.times{|bit|
-							byte = s_iter.next if offset % 8 == 0 
+							byte = s_iter.next if offset % 8 == 0 && bit > 7
 							src_bit = (7-offset%8)
 							number |= (1 << (length-1-bit)) if ((byte & (1 << src_bit)) > 0) ^ (!pos)
 							offset += 1
 						}
 						number += 1
+						puts "Pos #{pos}, number: #{number}"
 						pos ? number : -number
 					}
 				},
@@ -171,21 +173,13 @@ module RubyBits
 			# 	the string was left over after parsing.
 			def parse(string)
 				messages = []
-				loop do
-					loop_message_received = false
-					string.size.times{|start|
-						(start+1).upto(string.size){|_end|
-							if instance_exec(string[start.._end], &configuration[:message_end])
-								handle_message.call(string[start.._end])
-								string = string[(_end+1)..-1]
-								loop_message_received = true
-								message_received |= loop_message_received
-								break
-							end
-						}
-					}
-					break unless loop_message_received
+				last_message = true
+				while last_message
+					last_message, string = from_string(string)
+					puts "Found message: #{last_message.to_s.bytes.to_a}, string=#{string.bytes.to_a.inspect}"
+					messages << last_message if last_message
 				end
+				[messages, string]
 			end
 
 			private
