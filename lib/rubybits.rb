@@ -129,13 +129,16 @@ module RubyBits
 			# @param string [String] a binary string to be tested
 			# @return [Boolean] whether the string is in fact a valid message
 			def valid_message? string
-				!!from_string(string)
+				!!from_string(string)[0]
 			end
 			
-			# Parses a message exactly from a string; returns nil if the string
-			# is not a valid message
+			# Parses a message from the binary string assuming that the message starts at the first byte
+			# of the string
 			# @param string [String] a binary string to be interpreted
-			# @return [Structure] a structure object with the data from the input string
+			# @return [Array<Structure, string>] a pair with the first element being a structure object with 
+			# 	the data from the input string (or nil if not a valid structure) and the second being the
+			# 	left-over bytes from the string (those after the message or the entire string if no valid
+			# 	message was found)
 			def from_string(string)
 				message = self.new
 				iter = 0
@@ -150,16 +153,24 @@ module RubyBits
 						message.send("#{name}=", value)
 						checksum = value if checksum_field && name == checksum_field[0]
 					rescue StopIteration, FieldValueException => e
-						return nil
+						return [nil, string]
 					end
 					iter += size
 				}
 				# if there's a checksum, make sure the provided one is valid
-				return nil unless message.checksum == checksum if checksum_field
-				(string.size*8 - iter) < 8 ? message : nil 
+				return [nil, string] unless message.checksum == checksum if checksum_field
+				[message, string[((iter/8.0).ceil)..-1]]
 			end
 			
+			# Parses out all of the messages in a given string assuming that the first message
+			# starts at the first byte, and there are no bytes between messages (though messages
+			# are not allowed to span bytes; i.e., all messages must be byte-aligned).
+			# @param string [String] a binary string containing the messages to be parsed
+			# @return [Array<Array<Structure>, String>] a pair with the first element being an
+			# 	array of messages parsed out of the string and the second being whatever part of
+			# 	the string was left over after parsing.
 			def parse(string)
+				messages = []
 				loop do
 					loop_message_received = false
 					string.size.times{|start|
