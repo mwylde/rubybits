@@ -30,25 +30,75 @@ module RubyBits
 	#   # => [0x44, 0x2, 0x05, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x5F]
 	class Structure < Object
 		class << self
-			FIELDS = {
-				:unsigned => proc{|val, size, options|
-					val.is_a?(Fixnum) && val < 2**size
+			FIELD_TYPES = {
+				:unsigned => {
+					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val < 2**size},
+					:unpack => proc {|s, offset, length, options|
+						number = 0
+						s_iter = s.bytes
+						byte = 0
+						# advance the iterator by the number of whole or partial bytes in the offset (offset div 8)
+						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
+						
+						length.times{|bit|
+							byte = s_iter.next if offset % 8 == 0
+							src_bit = (7-offset%8)
+							number |= (1 << (length-1-bit)) if (byte & (1 << src_bit)) > 0
+							#puts "Reading: #{src_bit} from #{"%08b" % byte} => #{(byte & (1 << src_bit)) > 0 ? 1 : 0}"
+							offset += 1
+						}
+						number
+					}
 				},
-				:signed => proc{|val, size, options|
-					val.is_a?(Fixnum) && val.abs < 2**(size-1)
+				:signed => {
+					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val.abs < 2**(size-1)},
+					:unpack => proc{|s, offset, length, options|
+						number = 0
+						s_iter = s.bytes
+						byte = 0
+						# advance the iterator by the number of whole bytes in the offset (offset div 8)
+						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
+						# is this a positive number? yes if the most significant bit is 0
+						pos = byte & (1 << offset%8) == 0
+						
+						length.times{|bit|
+							byte = s_iter.next if offset % 8 == 0 
+							src_bit = (7-offset%8)
+							number |= (1 << (length-1-bit)) if ((byte & (1 << src_bit)) > 0) ^ (!pos)
+							offset += 1
+						}
+						number += 1
+						pos ? number : -number
+					}
 				},
-				:variable => proc{|val, size, options|
-					val.is_a? String
+				:variable => {
+					:validator => proc{|val, size, options| val.is_a?(String)},
+					:unpack => proc{|s, offset, length, options|
+						output = []
+						s_iter = s.bytes
+						byte = 0
+						# advance the iterator by the number of whole bytes in the offset (offset div 8)
+						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
+						length.times{|bit|
+							byte = s_iter.next if offset % 8 == 0
+							output << 0 if bit % 8 == 0
+							
+							src_bit = (7-offset%8)
+							output[-1] |= (1 << (7-bit%8)) if (byte & (1 << src_bit)) > 0
+							offset += 1
+						}
+						output.pack("c*")
+					}
 				}
 			}
-			FIELDS.each{|kind, validator|
+			FIELD_TYPES.each{|kind, field|
 				define_method kind do |name, size, description, *options|
-					field(kind, name, size, description, validator, options[0])
+					field(kind, name, size, description, field[:validator], options[0])
 				end
 			}
 			
 			define_method :variable do |name, description, *options|
-				field(:variable, name, nil, description, FIELDS[:variable], options[0])
+				field(:variable, name, nil, description, FIELD_TYPES[:variable][:validator], options[0])
 			end
 			
 			# Sets the checksum field. Setting a checksum field alters the functionality
@@ -74,6 +124,58 @@ module RubyBits
 			
 			# The checksum field
 			def checksum_field; @_checksum_field; end
+			
+			# Determines whether a string is a valid message
+			# @param string [String] a binary string to be tested
+			# @return [Boolean] whether the string is in fact a valid message
+			def valid_message? string
+				!!from_string(string)
+			end
+			
+			# Parses a message exactly from a string; returns nil if the string
+			# is not a valid message
+			# @param string [String] a binary string to be interpreted
+			# @return [Structure] a structure object with the data from the input string
+			def from_string(string)
+				message = self.new
+				iter = 0
+				checksum = nil
+				fields.each{|field|
+					kind, name, size, description, options = field
+					options ||= {}
+					size = (kind == :variable) ? message.send(options[:length]) : size
+					size *= 8 if options[:unit] == :byte
+					begin
+						value = FIELD_TYPES[kind][:unpack].call(string, iter, size, options)
+						message.send("#{name}=", value)
+						checksum = value if checksum_field && name == checksum_field[0]
+					rescue StopIteration, FieldValueException => e
+						return nil
+					end
+					iter += size
+				}
+				# if there's a checksum, make sure the provided one is valid
+				return nil unless message.checksum == checksum if checksum_field
+				(string.size*8 - iter) < 8 ? message : nil 
+			end
+			
+			def parse(string)
+				loop do
+					loop_message_received = false
+					string.size.times{|start|
+						(start+1).upto(string.size){|_end|
+							if instance_exec(string[start.._end], &configuration[:message_end])
+								handle_message.call(string[start.._end])
+								string = string[(_end+1)..-1]
+								loop_message_received = true
+								message_received |= loop_message_received
+								break
+							end
+						}
+					}
+					break unless loop_message_received
+				end
+			end
 
 			private
 			def field kind, name, size, description, validator, options
@@ -161,7 +263,7 @@ module RubyBits
 				when :variable
 					data ||= ""
 					size = options[:length] && self.send(options[:length]) ? self.send(options[:length]) : data.size
-					#size *= options[:multiple] if options[:multiple]
+					size *= 8 if options[:unit] == :byte
 					byte_iter = data.bytes
 					if offset % 8 == 0
 						buffer += data.bytes.to_a + [0] * (size - data.size)
@@ -184,10 +286,6 @@ module RubyBits
 					end
 				end
 			}
-			#if self.class.to_s == "TestFormat10"
-			#	puts buffer.collect{|x| "%08b" % x}.inspect
-			#	puts [119, 111, 201, 133, 137, 142, 72].collect{|x| "%08b" % x}.inspect
-			#end
 			buffer.pack("c*")	
 		end
 	end

@@ -187,3 +187,79 @@ describe "Structure" do
 	end
 end
 
+describe "parsing" do
+	it "should correctly determine a valid message" do
+		class TestFormat13 < RubyBits::Structure
+			unsigned :field1,   8,  "Field1"
+			unsigned :field2,   4,  "Field2"
+			unsigned :field3,   4,  "Field3"
+			signed   :field4,   8,  "Field4"
+			unsigned :field5,  16,  "Short field"
+		end
+		TestFormat13.valid_message?([0x34, 0x41, 0b11001001, 0x44, 0x55].pack("c*")).should == true
+		TestFormat13.valid_message?([0x44, 0x99, 0x44, 0x11, 0x12, 0x55, 0x11].pack("c*")).should == false
+		TestFormat13.valid_message?([0x11, 0x11, 0x44, 0x11, 0x44].pack("c*")).should == false
+		TestFormat13.valid_message?("").should == false
+		
+		tf = TestFormat13.from_string([0x34, 0x41, 0b11001001, 0x55, 0x11].pack("c*"))
+
+		tf.field1.should == 0x34
+		tf.field2.should == 0x04
+		tf.field3.should == 0x01
+		tf.field4.should == -55
+		tf.field5.should == 0x5511
+	end
+	it "should correctly determine a valid message with variable length fields" do
+		class TestFormat14 < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :size,     4, "Length"
+			unsigned :field3,   4, "Field3"
+			variable :text,        "text", :length => :size, :unit => :byte
+		end
+		TestFormat14.valid_message?([0x44, 0x3F].pack("cc") + "abc").should == true
+		TestFormat14.valid_message?([0x33, 0x1C].pack("cc") + "ab").should == false
+		TestFormat14.valid_message?([0x11, 0x5C].pack("cc") + "abc").should == false
+		
+		tf = TestFormat14.from_string([0x34, 0x3F].pack("c*") + "abc")
+		tf.field1.should == 0x34
+		tf.size.should == 0x03
+		tf.field3.should == 0x0F
+		tf.text.should == "abc"
+	end
+	it "should correctly determine a valid message with variable length fields and checksum" do
+		class TestFormat15 < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :size,     4, "size"
+			variable :text,        "text", :length => :size, :unit => :byte
+			unsigned :checksum, 8, "checksum"
+		
+			checksum :checksum do |bytes|
+				bytes.reduce(:+) & 255
+			end
+		end
+		
+		TestFormat15.valid_message?([0x5C, 0x36, 0x16, 0x26, 0x3F, 0xE0].pack("c*")).should == true
+		TestFormat15.valid_message?([0x5C, 0x36, 0x16, 0x26, 0x3F, 0xD0].pack("c*")).should == false
+		TestFormat15.valid_message?([0x5C, 0x36, 0x16, 0x26, 0x30, 0xE0].pack("c*")).should == false
+		
+		tf = TestFormat15.from_string([0x5C, 0x36, 0x16, 0x26, 0x3F, 0xE0].pack("c*"))
+		tf.field1.should == 0x5C
+		tf.size.should == 3
+		tf.text.should == "abc"
+		tf.checksum.should == 254
+	end
+#	it "should parse fix-width format" do 
+#		class TestFormat15 < RubyBits::Structure
+#			unsigned :field1,   8,  "Field1"
+#			unsigned :field2,   4,  "Field2"
+#			unsigned :field3,   4,  "Field3"
+#			signed   :field4,   8,  "Field4"
+#		end
+#
+#		tf = TestFormat15.parse([0x34, 0x41, 0b11001001].pack("c*"))
+#		tf.field1.should == 0x34
+#		tf.field2.should == 0x04
+#		tf.field3.should == 0x01
+#		tf.field4.should == -55
+#	end
+end
