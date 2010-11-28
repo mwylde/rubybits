@@ -30,6 +30,72 @@ module RubyBits
 	#   # => [0x44, 0x2, 0x05, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x5F]
 	class Structure < Object
 		class << self
+			#@private
+			private
+			FIELD_TYPES = {
+				:unsigned => {
+					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val < 2**size},
+					:unpack => proc {|s, offset, length, options|
+						number = 0
+						s_iter = s.bytes
+						byte = 0
+						# advance the iterator by the number of whole or partial bytes in the offset (offset div 8)
+						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
+						
+						length.times{|bit|
+							byte = s_iter.next if offset % 8 == 0
+							src_bit = (7-offset%8)
+							number |= (1 << (length-1-bit)) if (byte & (1 << src_bit)) > 0
+							#puts "Reading: #{src_bit} from #{"%08b" % byte} => #{(byte & (1 << src_bit)) > 0 ? 1 : 0}"
+							offset += 1
+						}
+						number
+					}
+				},
+				:signed => {
+					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val.abs < 2**(size-1)},
+					:unpack => proc{|s, offset, length, options|
+						number = 0
+						s_iter = s.bytes
+						byte = 0
+						# advance the iterator by the number of whole bytes in the offset (offset div 8)
+						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
+						# is this a positive number? yes if the most significant bit is 0
+						byte = s_iter.next if offset % 8 == 0
+						pos = byte & (1 << 7 - offset%8) == 0
+						#puts "String: #{s.bytes.to_a.collect{|x| "%08b" % x}.join(" ")}"
+						#puts "Byte: #{"%08b" % byte}, offset: #{offset}"
+						
+						length.times{|bit|
+							byte = s_iter.next if offset % 8 == 0 && bit > 7
+							src_bit = (7-offset%8)
+							number |= (1 << (length-1-bit)) if ((byte & (1 << src_bit)) > 0) ^ (!pos)
+							offset += 1
+						}
+						#puts "Pos #{pos}, number: #{number}"
+						pos ? number : -number-1
+					}
+				},
+				:variable => {
+					:validator => proc{|val, size, options| val.is_a?(String)},
+					:unpack => proc{|s, offset, length, options|
+						output = []
+						s_iter = s.bytes
+						byte = 0
+						# advance the iterator by the number of whole bytes in the offset (offset div 8)
+						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
+						length.times{|bit|
+							byte = s_iter.next if offset % 8 == 0
+							output << 0 if bit % 8 == 0
+							
+							src_bit = (7-offset%8)
+							output[-1] |= (1 << (7-bit%8)) if (byte & (1 << src_bit)) > 0
+							offset += 1
+						}
+						output.pack("c*")
+					}
+				}
+			}
 			FIELD_TYPES.each{|kind, field|
 				define_method kind do |name, size, description, *options|
 					field(kind, name, size, description, field[:validator], options[0])
@@ -40,6 +106,7 @@ module RubyBits
 				field(:variable, name, nil, description, FIELD_TYPES[:variable][:validator], options[0])
 			end
 			
+			public 
 			# Sets the checksum field. Setting a checksum field alters the functionality
 			# in several ways: the checksum is automatically calculated and set, and #parse
 			# will only consider a bitstring to be a valid instance of the structure if it
@@ -138,73 +205,6 @@ module RubyBits
 					}
 				end
 			end
-			
-			# @private
-			FIELD_TYPES = {
-				:unsigned => {
-					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val < 2**size},
-					:unpack => proc {|s, offset, length, options|
-						number = 0
-						s_iter = s.bytes
-						byte = 0
-						# advance the iterator by the number of whole or partial bytes in the offset (offset div 8)
-						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
-						
-						length.times{|bit|
-							byte = s_iter.next if offset % 8 == 0
-							src_bit = (7-offset%8)
-							number |= (1 << (length-1-bit)) if (byte & (1 << src_bit)) > 0
-							#puts "Reading: #{src_bit} from #{"%08b" % byte} => #{(byte & (1 << src_bit)) > 0 ? 1 : 0}"
-							offset += 1
-						}
-						number
-					}
-				},
-				:signed => {
-					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val.abs < 2**(size-1)},
-					:unpack => proc{|s, offset, length, options|
-						number = 0
-						s_iter = s.bytes
-						byte = 0
-						# advance the iterator by the number of whole bytes in the offset (offset div 8)
-						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
-						# is this a positive number? yes if the most significant bit is 0
-						byte = s_iter.next if offset % 8 == 0
-						pos = byte & (1 << 7 - offset%8) == 0
-						#puts "String: #{s.bytes.to_a.collect{|x| "%08b" % x}.join(" ")}"
-						#puts "Byte: #{"%08b" % byte}, offset: #{offset}"
-						
-						length.times{|bit|
-							byte = s_iter.next if offset % 8 == 0 && bit > 7
-							src_bit = (7-offset%8)
-							number |= (1 << (length-1-bit)) if ((byte & (1 << src_bit)) > 0) ^ (!pos)
-							offset += 1
-						}
-						#puts "Pos #{pos}, number: #{number}"
-						pos ? number : -number-1
-					}
-				},
-				:variable => {
-					:validator => proc{|val, size, options| val.is_a?(String)},
-					:unpack => proc{|s, offset, length, options|
-						output = []
-						s_iter = s.bytes
-						byte = 0
-						# advance the iterator by the number of whole bytes in the offset (offset div 8)
-						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
-						length.times{|bit|
-							byte = s_iter.next if offset % 8 == 0
-							output << 0 if bit % 8 == 0
-							
-							src_bit = (7-offset%8)
-							output[-1] |= (1 << (7-bit%8)) if (byte & (1 << src_bit)) > 0
-							offset += 1
-						}
-						output.pack("c*")
-					}
-				}
-			}
-			
 		end
 		
 		# Creates a new instance of the class. You can pass in field names to initialize to
