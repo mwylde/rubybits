@@ -273,4 +273,26 @@ describe "parsing" do
 		
 		string.should == "ab"
 	end
+	it "should parse variable-width format" do 
+		class TestFormat17 < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :size,     4, "Length"
+			unsigned :field3,   4, "Field3"
+			variable :text,        "text", :length => :size, :unit => :byte
+		end
+
+		messages, string = TestFormat17.parse([0x44, 0x24].pack("c*") + "hi" + [0x55, 0x62].pack("c*") + "hello! friend")
+		messages[0].field1.should == 0x44
+		messages[0].size.should == 0x02
+		messages[0].field3.should == 0x04
+		messages[0].text.should == "hi"
+		
+		messages[1].field1.should == 0x55
+		messages[1].size.should == 0x6
+		messages[1].field3.should == 0x2
+		messages[1].text.should == "hello!"
+		
+		string.should == " friend"
+	end
+	
 end
