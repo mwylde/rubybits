@@ -203,7 +203,6 @@ describe "parsing" do
 		TestFormat13.valid_message?("").should == false
 		
 		tf, string = TestFormat13.from_string([0x34, 0x41, 0b11001001, 0b00110011, 0x55, 0x11].pack("c*") + "ab")
-
 		tf.field1.should == 0x34
 		tf.field2.should == 0x04
 		tf.field3.should == 0x01

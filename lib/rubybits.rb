@@ -60,7 +60,9 @@ module RubyBits
 						((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
 						# is this a positive number? yes if the most significant bit is 0
 						byte = s_iter.next if offset % 8 == 0
-						pos = byte & (1 << offset%8) == 0
+						pos = byte & (1 << 7 - offset%8) == 0
+						#puts "String: #{s.bytes.to_a.collect{|x| "%08b" % x}.join(" ")}"
+						#puts "Byte: #{"%08b" % byte}, offset: #{offset}"
 						
 						length.times{|bit|
 							byte = s_iter.next if offset % 8 == 0 && bit > 7
@@ -68,9 +70,8 @@ module RubyBits
 							number |= (1 << (length-1-bit)) if ((byte & (1 << src_bit)) > 0) ^ (!pos)
 							offset += 1
 						}
-						number += 1
-						puts "Pos #{pos}, number: #{number}"
-						pos ? number : -number
+						#puts "Pos #{pos}, number: #{number}"
+						pos ? number : -number-1
 					}
 				},
 				:variable => {
@@ -176,7 +177,7 @@ module RubyBits
 				last_message = true
 				while last_message
 					last_message, string = from_string(string)
-					puts "Found message: #{last_message.to_s.bytes.to_a}, string=#{string.bytes.to_a.inspect}"
+					#puts "Found message: #{last_message.to_s.bytes.to_a}, string=#{string.bytes.to_a.inspect}"
 					messages << last_message if last_message
 				end
 				[messages, string]
