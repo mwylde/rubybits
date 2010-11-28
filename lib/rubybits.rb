@@ -8,15 +8,22 @@ module RubyBits
 	# can be used for lots of purposes: reading binary data, communicating in
 	# binary formats (like TCP/IP, http, etc).
 	# 
+	# Currently, three field types are supported: unsigned, signed and variable. Unsigned
+	# and signed fields are big-endian and can be any number of bits in size. Unsigned
+	# integers are assumed to be encoded with two's complement. Variable fields are binary
+	# strings with their size defined by the value of another field (given by passing that
+	# field's name to the :length option). This size is assumed to be in bits; if it is
+	# in fact in bytes, you should pass :byte to the :unit option (see the example).
+	# 
 	# @example
 	# 	class NECProjectorFormat < RubyBits::Structure
-	# 	  unsigned :id1,     1.byte,    "Identification data assigned to each command"
-	# 	  unsigned :id2,     1.byte,    "Identification data assigned to each command"
-	# 	  unsigned :p_id,    1.byte,    "Projector ID"
-	# 	  unsigned :m_code,  4.bits,    "Model code for projector"
-	# 	  unsigned :len,     12.bits,   "Length of data in bytes"
-	# 	  variable :data,    1.byte,    "Packet data", :length => :len
-	# 	  unsigned :checksum,1.byte,    "Checksum"
+	# 	  unsigned :id1,     8,    "Identification data assigned to each command"
+	# 	  unsigned :id2,     8,    "Identification data assigned to each command"
+	# 	  unsigned :p_id,    8,    "Projector ID"
+	# 	  unsigned :m_code,  4,    "Model code for projector"
+	# 	  unsigned :len,     12,   "Length of data in bytes"
+	# 	  variable :data,    8,    "Packet data", :length => :len, :unit => :byte
+	# 	  unsigned :checksum,8,    "Checksum"
 	# 
 	# 	  checksum :checksum do |bytes|
 	# 	    bytes[0..-2].inject{|sum, byte| sum += byte} & 255
@@ -24,14 +31,14 @@ module RubyBits
 	#   end
 	#  	
 	#   NECProjectorFormat.parse(buffer)
-	#   # => [<NECProjectorFormat>, <NECProjectorFormat>]
+	#   # => [[<NECProjectorFormat>, <NECProjectorFormat>], rest]
 	#   
 	#   NECProjectorFormat.new(:id1 => 0x44, :id2 => 2, :p_id => 0, :m_code => 0, :len => 5, :data => "hello").to_s.bytes.to_a
 	#   # => [0x44, 0x2, 0x05, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x5F]
 	class Structure < Object
 		class << self
-			#@private
 			private
+			#@private
 			FIELD_TYPES = {
 				:unsigned => {
 					:validator => proc{|val, size, options| val.is_a?(Fixnum) && val < 2**size},
