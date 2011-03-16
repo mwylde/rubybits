@@ -4,16 +4,18 @@ module RubyBits
 	# the field (i.e., too large or the wrong type)
 	class FieldValueException < Exception; end
 		
-	# You can subclass RubyBits::Strcuture to define new binary formats. This
-	# can be used for lots of purposes: reading binary data, communicating in
-	# binary formats (like TCP/IP, http, etc).
+	# You can subclass RubyBits::Strcuture to define new binary
+	# formats. This can be used for lots of purposes: reading binary
+	# data, communicating in binary formats (like TCP/IP, http, etc).
 	# 
-	# Currently, three field types are supported: unsigned, signed and variable. Unsigned
-	# and signed fields are big-endian and can be any number of bits in size. Unsigned
-	# integers are assumed to be encoded with two's complement. Variable fields are binary
-	# strings with their size defined by the value of another field (given by passing that
-	# field's name to the :length option). This size is assumed to be in bits; if it is
-	# in fact in bytes, you should pass :byte to the :unit option (see the example).
+	# Currently, three field types are supported: unsigned, signed and
+	# variable. Unsigned and signed fields are big-endian and can be any
+	# number of bits in size. Unsigned integers are assumed to be
+	# encoded with two's complement. Variable fields are binary strings
+	# with their size defined by the value of another field (given by
+	# passing that field's name to the :length option). This size is
+	# assumed to be in bits; if it is in fact in bytes, you should pass
+	# :byte to the :unit option (see the example).
 	# 
 	# @example
 	# 	class NECProjectorFormat < RubyBits::Structure
@@ -22,11 +24,11 @@ module RubyBits
 	# 	  unsigned :p_id,    8,    "Projector ID"
 	# 	  unsigned :m_code,  4,    "Model code for projector"
 	# 	  unsigned :len,     12,   "Length of data in bytes"
-	# 	  variable :data,    8,    "Packet data", :length => :len, :unit => :byte
+	# 	  variable :data,          "Packet data", :length => :len, :unit => :byte
 	# 	  unsigned :checksum,8,    "Checksum"
 	# 
 	# 	  checksum :checksum do |bytes|
-	# 	    bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+	# 	    bytes[0..-2].inject{|sum, byte| sum + byte} & 255
 	# 	  end
 	#   end
 	#  	
@@ -144,14 +146,34 @@ module RubyBits
 			def valid_message? string
 				!!from_string(string)[0]
 			end
+
+      # Determines whether a string is at least the minimum correct
+      # length and matches the checksum. This method is less correct
+      # than valid_message? but considerably faster.
+      # @param string [String] a binary string to be tested, not
+      #   including a checksum region if applicable
+      # @return [Boolean] whether the string is likely to be a valid
+      #   message
+      def probably_valid? string 
+        if string.size >= @_size_sum
+          if self.class.checksum_field
+            checksum = self.class.checksum_field[1].call(string)            
+          else
+            return true
+          end
+        end
+        return false
+      end
 			
-			# Parses a message from the binary string assuming that the message starts at the first byte
-			# of the string
+			# Parses a message from the binary string assuming that the
+			# message starts at the first byte of the string
 			# @param string [String] a binary string to be interpreted
-			# @return [Array<Structure, string>] a pair with the first element being a structure object with 
-			# 	the data from the input string (or nil if not a valid structure) and the second being the
-			# 	left-over bytes from the string (those after the message or the entire string if no valid
-			# 	message was found)
+			# @return [Array<Structure, string>] a pair with the first
+      #   element being a structure object with the data from the
+      #   input string (or nil if not a valid structure) and the
+      #   second being the left-over bytes from the string (those
+      #   after the message or the entire string if no valid message
+      #   was found)
 			def from_string(string)
 				message = self.new
 				iter = 0
@@ -197,6 +219,7 @@ module RubyBits
 			def field kind, name, size, description, validator, options
 				@_fields ||= []
 				@_fields << [kind, name, size, description, options]
+        @_size_sum = @_fields.reduce{|acc, f| f[0] == :variable ? acc : acc + f[2]}/8
 				self.class_eval do
 					define_method "#{name}=" do |val|
 						raise FieldValueException unless validator.call(val, size, options)
@@ -255,7 +278,7 @@ module RubyBits
 		# @return [Fixnum] byte with bit set to value
 		def set_bit(byte, bit, value)
 			#TODO: this can probably be made more efficient
-			byte & (1<<bit) > 0 == value > 0 ? byte : byte ^ (1<<bit)
+			byte & (1 << bit) > 0 == value > 0 ? byte : byte ^ (1 << bit)
 		end
 		
 		# Returns the value at position bit of byte
@@ -263,14 +286,14 @@ module RubyBits
 		# @param bit [Fixnum] bit of interest
 		# @return [Fixnum: {0, 1}] 0 or 1, depending on the value of the bit at position bit of number
 		def get_bit(number, bit)
-			number & (1<<bit) > 0 ? 1 : 0
+			number & (1 << bit) > 0 ? 1 : 0
 		end
 		
 		def to_s_without_checksum
 			offset = 0
 			buffer = []
-			# This method works by iterating through each bit of each field and setting the bits in
-			# the current output byte appropriately.
+			# This method works by iterating through each bit of each field
+			# and setting the bits in the current output byte appropriately.
 			self.class.fields.each{|field|
 				kind, name, size, description, options = field
 				data = self.send(name)

@@ -16,11 +16,11 @@ Example:
       unsigned :p_id,    8,    "Projector ID"
       unsigned :m_code,  4,    "Model code for projector"
       unsigned :len,     12,   "Length of data in bytes"
-      variable :data,    8,    "Packet data", :length => :len, :unit => :byte
+      variable :data,          "Packet data", :length => :len, :unit => :byte
       unsigned :checksum,8,    "Checksum"
 
       checksum :checksum do |bytes|
-        bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+        bytes[0..-2].inject{|sum, byte| sum + byte} & 255
       end
     end
 
