@@ -14,8 +14,10 @@ module RubyBits
   # encoded with two's complement. Variable fields are binary strings
   # with their size defined by the value of another field (given by
   # passing that field's name to the :length option). This size is
-  # assumed to be in bits; if it is in fact in bytes, you should pass
-  # :byte to the :unit option (see the example).
+  # assumed to be in bytes; if it is in fact in bits, you should pass
+  # :bit to the :unit option (see the example). Note that
+  # variable-length fields must have whole-byte sizes, though they
+  # need not be byte-aligned.
   # 
   # @example
   #   class NECProjectorFormat < RubyBits::Structure
@@ -24,7 +26,7 @@ module RubyBits
   #     unsigned :p_id,    8,    "Projector ID"
   #     unsigned :m_code,  4,    "Model code for projector"
   #     unsigned :len,     12,   "Length of data in bytes"
-  #     variable :data,          "Packet data", :length => :len, :unit => :byte
+  #     variable :data,          "Packet data", :length => :len
   #     unsigned :checksum,8,    "Checksum"
   # 
   #     checksum :checksum do |bytes|
@@ -91,7 +93,8 @@ module RubyBits
             output = []
             s_iter = s.bytes
             byte = 0
-            # advance the iterator by the number of whole bytes in the offset (offset div 8)
+            # advance the iterator by the number of whole bytes in the
+            # offset (offset div 8)
             ((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
             length.times{|bit|
               byte = s_iter.next if offset % 8 == 0
@@ -154,7 +157,7 @@ module RubyBits
       #   including a checksum region if applicable
       # @return [Boolean] whether the string is likely to be a valid
       #   message
-      def probably_valid? string 
+      def maybe_valid? string 
         if string.size >= @_size_sum
           if self.class.checksum_field
             checksum = self.class.checksum_field[1].call(string)            
@@ -197,13 +200,16 @@ module RubyBits
         [message, string[((iter/8.0).ceil)..-1]]
       end
       
-      # Parses out all of the messages in a given string assuming that the first message
-      # starts at the first byte, and there are no bytes between messages (though messages
-      # are not allowed to span bytes; i.e., all messages must be byte-aligned).
-      # @param string [String] a binary string containing the messages to be parsed
-      # @return [Array<Array<Structure>, String>] a pair with the first element being an
-      #   array of messages parsed out of the string and the second being whatever part of
-      #   the string was left over after parsing.
+      # Parses out all of the messages in a given string assuming that
+      # the first message starts at the first byte, and there are no
+      # bytes between messages (though messages are not allowed to
+      # span bytes; i.e., all messages must be byte-aligned).
+      # @param string [String] a binary string containing the messages
+      #   to be parsed
+      # @return [Array<Array<Structure>, String>] a pair with the
+      #   first element being an array of messages parsed out of the
+      #   string and the second being whatever part of the string was
+      #   left over after parsing.
       def parse(string)
         messages = []
         last_message = true
@@ -219,7 +225,9 @@ module RubyBits
       def field kind, name, size, description, validator, options
         @_fields ||= []
         @_fields << [kind, name, size, description, options]
-        @_size_sum = @_fields.reduce{|acc, f| f[0] == :variable ? acc : acc + f[2]}/8
+        @_size_sum = @_fields.reduce(0){|acc, f|
+          f[0] == :variable ? acc : acc + f[2]
+        }/8
         self.class_eval do
           define_method "#{name}=" do |val|
             raise FieldValueException unless validator.call(val, size, options)
@@ -302,7 +310,7 @@ module RubyBits
         when :variable
           data ||= ""
           size = options[:length] && self.send(options[:length]) ? self.send(options[:length]) : data.size
-          size *= 8 if options[:unit] == :byte
+          size /= 8 if options[:unit] == :bit
           byte_iter = data.bytes
           if offset % 8 == 0
             buffer += data.bytes.to_a + [0] * (size - data.size)

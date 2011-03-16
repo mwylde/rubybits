@@ -154,9 +154,9 @@ describe "Structure" do
 	it "should allow variable length fields whose lengths are specified by another field" do
 		class TestFormat11 < RubyBits::Structure
 			unsigned :field1,   8, "Field1"
-			unsigned :field2,   4, "Field2"
-			unsigned :field3,   4, "Flag"
-			variable :text,        "text", :length => :field2
+			unsigned :field2,   8, "Field2"
+			unsigned :field3,   8, "Flag"
+			variable :text,        "text", :length => :field2, :unit => :bit
 			unsigned :checksum, 8, "Checksum (sum of all previous fields)"
 			
 			checksum :checksum do |bytes|
@@ -164,13 +164,36 @@ describe "Structure" do
 			end
 		end
 		
-		tf = TestFormat11.new(:field1 => 0x77, :field2 => 0x04, :field3 => 0x0F, :text => "abc")
-		checksum = (0x77 + 0x4F + "abc".bytes.to_a.reduce(:+)) & 255
+		tf = TestFormat11.new(:field1 => 0x77, :field2 => 32, :field3 => 0x0F, :text => "abc")
+		checksum = (0x77 + 32 + 0x0F + "abc".bytes.to_a.reduce(:+)) & 255
 		tf.checksum.should == checksum
 		
-		tf.to_s.bytes.to_a.should == [0x77, 0x4F, 0x61, 0x62, 0x63, 0, checksum]
+		tf.to_s.bytes.to_a.should == [0x77, 32, 0x0F, 0x61, 0x62, 0x63, 0, checksum]
 	end
-	
+
+  it "should allow variable length fields whose lengths are specified by another field in bytes" do
+		class TestFormat11b < RubyBits::Structure
+			unsigned :field1,   8, "Field1"
+			unsigned :field2,   8, "Field2"
+      unsigned :field3,   8, "Field3"
+      unsigned :field4,   4, "Field4"
+      unsigned :len,     12, "Length"
+			variable :text,        "text", :length => :len, :unit => :byte
+			unsigned :checksum, 8, "Checksum (sum of all previous fields)"
+			
+			checksum :checksum do |bytes|
+				bytes[0..-2].inject{|sum, byte| sum += byte} & 255
+			end
+		end
+		
+		tf = TestFormat11b.new(:field1 => 0x77, :field2 => 0x44, :field3 => 0x10, :field4 => 0xE, :len => 4, :text => "abc")
+		checksum = (0x77 + 0x44 + 0x10 + 0xE0 + 0x04 + "abc".bytes.to_a.reduce(:+)) & 255
+		tf.checksum.should == checksum
+		
+		tf.to_s.bytes.to_a.should == [0x77, 0x44, 0x10, 0xE0, 0x4,
+                                  97, 98, 99, 0, checksum]
+	end
+
 	it "should fail when setting an invalid value for a field" do
 		class TestFormat12 < RubyBits::Structure
 			unsigned :field1,   8,  "Field1"
