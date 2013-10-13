@@ -3,11 +3,11 @@ module RubyBits
   # Raised when you set a field to a value that is invalid for the type of
   # the field (i.e., too large or the wrong type)
   class FieldValueException < Exception; end
-    
+
   # You can subclass RubyBits::Strcuture to define new binary
   # formats. This can be used for lots of purposes: reading binary
   # data, communicating in binary formats (like TCP/IP, http, etc).
-  # 
+  #
   # Currently, three field types are supported: unsigned, signed and
   # variable. Unsigned and signed fields are big-endian and can be any
   # number of bits in size. Unsigned integers are assumed to be
@@ -18,7 +18,7 @@ module RubyBits
   # :bit to the :unit option (see the example). Note that
   # variable-length fields must have whole-byte sizes, though they
   # need not be byte-aligned.
-  # 
+  #
   # @example
   #   class NECProjectorFormat < RubyBits::Structure
   #     unsigned :id1,     8,    "Identification data assigned to each command"
@@ -28,15 +28,15 @@ module RubyBits
   #     unsigned :len,     12,   "Length of data in bytes"
   #     variable :data,          "Packet data", :length => :len
   #     unsigned :checksum,8,    "Checksum"
-  # 
+  #
   #     checksum :checksum do |bytes|
   #       bytes[0..-2].inject{|sum, byte| sum + byte} & 255
   #     end
   #   end
-  #   
+  #
   #   NECProjectorFormat.parse(buffer)
   #   # => [[<NECProjectorFormat>, <NECProjectorFormat>], rest]
-  #   
+  #
   #   NECProjectorFormat.new(:id1 => 0x44, :id2 => 2, :p_id => 0, :m_code => 0, :len => 5, :data => "hello").to_s.bytes.to_a
   #   # => [0x44, 0x2, 0x05, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x5F]
   class Structure < Object
@@ -48,11 +48,11 @@ module RubyBits
           :validator => proc{|val, size, options| val.is_a?(Fixnum) && val < 2**size},
           :unpack => proc {|s, offset, length, options|
             number = 0
-            s_iter = s.bytes
+            s_iter = s.each_byte
             byte = 0
             # advance the iterator by the number of whole or partial bytes in the offset (offset div 8)
             ((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
-            
+
             length.times{|bit|
               byte = s_iter.next if offset % 8 == 0
               src_bit = (7-offset%8)
@@ -63,11 +63,12 @@ module RubyBits
             number
           }
         },
+
         :signed => {
           :validator => proc{|val, size, options| val.is_a?(Fixnum) && val.abs < 2**(size-1)},
           :unpack => proc{|s, offset, length, options|
             number = 0
-            s_iter = s.bytes
+            s_iter = s.each_byte
             byte = 0
             # advance the iterator by the number of whole bytes in the offset (offset div 8)
             ((offset.to_f/8).ceil).times{|i| byte = s_iter.next}
@@ -76,7 +77,7 @@ module RubyBits
             pos = byte & (1 << 7 - offset%8) == 0
             #puts "String: #{s.bytes.to_a.collect{|x| "%08b" % x}.join(" ")}"
             #puts "Byte: #{"%08b" % byte}, offset: #{offset}"
-            
+
             length.times{|bit|
               byte = s_iter.next if offset % 8 == 0 && bit > 7
               src_bit = (7-offset%8)
@@ -91,7 +92,7 @@ module RubyBits
           :validator => proc{|val, size, options| val.is_a?(String)},
           :unpack => proc{|s, offset, length, options|
             output = []
-            s_iter = s.bytes
+            s_iter = s.each_byte
             byte = 0
             # advance the iterator by the number of whole bytes in the
             # offset (offset div 8)
@@ -99,7 +100,7 @@ module RubyBits
             length.times{|bit|
               byte = s_iter.next if offset % 8 == 0
               output << 0 if bit % 8 == 0
-              
+
               src_bit = (7-offset%8)
               output[-1] |= (1 << (7-bit%8)) if (byte & (1 << src_bit)) > 0
               offset += 1
@@ -113,12 +114,12 @@ module RubyBits
           field(kind, name, size, description, field[:validator], options[0])
         end
       }
-      
+
       define_method :variable do |name, description, *options|
         field(:variable, name, nil, description, FIELD_TYPES[:variable][:validator], options[0])
       end
-      
-      public 
+
+      public
       # Sets the checksum field. Setting a checksum field alters the functionality
       # in several ways: the checksum is automatically calculated and set, and #parse
       # will only consider a bitstring to be a valid instance of the structure if it
@@ -136,13 +137,13 @@ module RubyBits
           end
         }
       end
-      
+
       # A list of the fields in the class
       def fields; @_fields; end
-      
+
       # The checksum field
       def checksum_field; @_checksum_field; end
-      
+
       # Determines whether a string is a valid message
       # @param string [String] a binary string to be tested
       # @return [Boolean] whether the string is in fact a valid message
@@ -157,17 +158,17 @@ module RubyBits
       #   including a checksum region if applicable
       # @return [Boolean] whether the string is likely to be a valid
       #   message
-      def maybe_valid? string 
+      def maybe_valid? string
         if string.size >= @_size_sum
           if self.class.checksum_field
-            checksum = self.class.checksum_field[1].call(string)            
+            checksum = self.class.checksum_field[1].call(string)
           else
             return true
           end
         end
         return false
       end
-      
+
       # Parses a message from the binary string assuming that the
       # message starts at the first byte of the string
       # @param string [String] a binary string to be interpreted
@@ -199,7 +200,7 @@ module RubyBits
         return [nil, string] unless message.checksum == checksum if checksum_field
         [message, string[((iter/8.0).ceil)..-1]]
       end
-      
+
       # Parses out all of the messages in a given string assuming that
       # the first message starts at the first byte, and there are no
       # bytes between messages (though messages are not allowed to
@@ -244,7 +245,7 @@ module RubyBits
         end
       end
     end
-    
+
     # Creates a new instance of the class. You can pass in field names to initialize to
     # set their values.
     # @example
@@ -255,7 +256,7 @@ module RubyBits
       }
       @_checksum_cached = false
     end
-        
+
     # Returns a binary string representation of the structure according to the fields defined
     # and their current values.
     # @return [String] bit string representing struct
@@ -265,7 +266,7 @@ module RubyBits
       end
       to_s_without_checksum
     end
-    
+
     # Calculates and sets the checksum bit according to the checksum field defined by #checksum
     def calculate_checksum
       if self.class.checksum_field
@@ -277,8 +278,8 @@ module RubyBits
         @_calculating_checksum = false
       end
     end
-    
-    protected       
+
+    protected
     # Returns the input number with the specified bit set to the specified value
     # @param byte [Fixnum] Number to be modified
     # @param bit [Fixnum] Bit number to be set 
@@ -288,7 +289,7 @@ module RubyBits
       #TODO: this can probably be made more efficient
       byte & (1 << bit) > 0 == value > 0 ? byte : byte ^ (1 << bit)
     end
-    
+
     # Returns the value at position bit of byte
     # @param number [Fixnum] Number to be queried
     # @param bit [Fixnum] bit of interest
@@ -296,7 +297,7 @@ module RubyBits
     def get_bit(number, bit)
       number & (1 << bit) > 0 ? 1 : 0
     end
-    
+
     def to_s_without_checksum
       offset = 0
       buffer = []
@@ -311,7 +312,7 @@ module RubyBits
           data ||= ""
           size = options[:length] && self.send(options[:length]) ? self.send(options[:length]) : data.size
           size /= 8 if options[:unit] == :bit
-          byte_iter = data.bytes
+          byte_iter = data.each_byte
           if offset % 8 == 0
             buffer += data.bytes.to_a + [0] * (size - data.size)
           else
@@ -333,7 +334,7 @@ module RubyBits
           end
         end
       }
-      buffer.pack("c*") 
+      buffer.pack("c*")
     end
-  end  
+  end
 end
